@@ -1,0 +1,12 @@
+{
+  "name": "dutch-parliament-simulator-frontend",
+  "version": "1.0.0",
+  "description": "Frontend for Dutch Parliament Simulator",
+  "main": "index.js",
+  "scripts": {
+    "start": "serve -s public -l 3000"
+  },
+  "dependencies": {
+    "serve": "^13.0.2"
+  }
+}
