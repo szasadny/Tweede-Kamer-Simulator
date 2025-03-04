@@ -1,5 +1,7 @@
+# backend/app/db/init_db.py
 import asyncio
-import json
+import httpx
+import logging
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -9,222 +11,230 @@ from app.models.party import Party
 from app.models.member import Member
 from app.models.proposal import Proposal, ProposalStatus
 
-# Sample Dutch parties data
-PARTIES_DATA = [
-    {
-        "name": "Volkspartij voor Vrijheid en Democratie",
-        "abbreviation": "VVD",
-        "ideology": "Liberal-Conservative",
-        "description": "Center-right political party focused on economic liberalism, conservative social values, and individual responsibility."
-    },
-    {
-        "name": "Democraten 66",
-        "abbreviation": "D66",
-        "ideology": "Social Liberal",
-        "description": "Progressive, social-liberal party focused on direct democracy, social and governmental reform, and environmental issues."
-    },
-    {
-        "name": "Partij voor de Vrijheid",
-        "abbreviation": "PVV",
-        "ideology": "Right-wing Populist",
-        "description": "Right-wing populist party with an anti-immigration, anti-Islam, Eurosceptic, and economically mixed platform."
-    },
-    {
-        "name": "Christen-Democratisch Appèl",
-        "abbreviation": "CDA",
-        "ideology": "Christian Democratic",
-        "description": "Christian democratic party with center-right positions and focus on traditional values."
-    },
-    {
-        "name": "Socialistische Partij",
-        "abbreviation": "SP",
-        "ideology": "Socialist",
-        "description": "Left-wing socialist party focused on workers' rights, welfare state, and opposition to neoliberalism."
-    },
-    {
-        "name": "Partij van de Arbeid",
-        "abbreviation": "PvdA",
-        "ideology": "Social Democratic",
-        "description": "Center-left social democratic party with focus on labor rights, social welfare, and progressive taxation."
-    },
-    {
-        "name": "GroenLinks",
-        "abbreviation": "GL",
-        "ideology": "Green Politics",
-        "description": "Left-wing green party focusing on environmentalism, social justice, and progressive politics."
-    }
-]
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Sample members data (with political leanings)
-MEMBERS_DATA = [
-    {
-        "name": "Mark Rutte",
-        "party_abbreviation": "VVD",
-        "role": "MP",
-        "economic_leaning": 75.0,
-        "social_leaning": 55.0,
-        "eu_stance": 40.0,
-        "bio": "Former Prime Minister and VVD party leader with a focus on economic growth and fiscal responsibility."
-    },
-    {
-        "name": "Sophie Hermans",
-        "party_abbreviation": "VVD",
-        "role": "MP",
-        "economic_leaning": 70.0,
-        "social_leaning": 50.0,
-        "eu_stance": 45.0,
-        "bio": "Fiscal conservative with expertise in budget affairs and economic policy."
-    },
-    {
-        "name": "Sigrid Kaag",
-        "party_abbreviation": "D66",
-        "role": "MP",
-        "economic_leaning": 55.0,
-        "social_leaning": 25.0,
-        "eu_stance": 20.0,
-        "bio": "Progressive politician with a background in international diplomacy and strong pro-EU stance."
-    },
-    {
-        "name": "Rob Jetten",
-        "party_abbreviation": "D66",
-        "role": "MP",
-        "economic_leaning": 50.0,
-        "social_leaning": 20.0,
-        "eu_stance": 15.0,
-        "bio": "Young, progressive politician with focus on climate action and democratic reform."
-    },
-    {
-        "name": "Geert Wilders",
-        "party_abbreviation": "PVV",
-        "role": "MP",
-        "economic_leaning": 65.0,
-        "social_leaning": 85.0,
-        "eu_stance": 90.0,
-        "bio": "Outspoken critic of Islam and immigration, with strong nationalist and Eurosceptic views."
-    },
-    {
-        "name": "Fleur Agema",
-        "party_abbreviation": "PVV",
-        "role": "MP",
-        "economic_leaning": 60.0,
-        "social_leaning": 80.0,
-        "eu_stance": 85.0,
-        "bio": "Focused on healthcare issues while maintaining strong anti-immigration stance."
-    },
-    {
-        "name": "Wopke Hoekstra",
-        "party_abbreviation": "CDA",
-        "role": "MP",
-        "economic_leaning": 65.0,
-        "social_leaning": 60.0,
-        "eu_stance": 40.0,
-        "bio": "Former finance minister with expertise in economic policy and moderate conservative values."
-    },
-    {
-        "name": "Lilian Marijnissen",
-        "party_abbreviation": "SP",
-        "role": "MP",
-        "economic_leaning": 20.0,
-        "social_leaning": 30.0,
-        "eu_stance": 60.0,
-        "bio": "Strong advocate for workers' rights, social equality, and critical of EU neoliberal policies."
-    },
-    {
-        "name": "Attje Kuiken",
-        "party_abbreviation": "PvdA",
-        "role": "MP",
-        "economic_leaning": 35.0,
-        "social_leaning": 30.0,
-        "eu_stance": 30.0,
-        "bio": "Social democrat with focus on healthcare, education, and labor market issues."
-    },
-    {
-        "name": "Jesse Klaver",
-        "party_abbreviation": "GL",
-        "role": "MP",
-        "economic_leaning": 25.0,
-        "social_leaning": 15.0,
-        "eu_stance": 25.0,
-        "bio": "Young, charismatic leader with strong focus on climate action, social justice, and progressive taxation."
-    }
-]
+# API endpoints
+TWEEDEKAMER_API_BASE = "https://gegevensmagazijn.tweedekamer.nl/OData/v4/2.0"
+FRACTIES_ENDPOINT = f"{TWEEDEKAMER_API_BASE}/Fractie"
+PERSONEN_ENDPOINT = f"{TWEEDEKAMER_API_BASE}/Persoon"
+PERSOON_LOOPBAAN_ENDPOINT = f"{TWEEDEKAMER_API_BASE}/PersoonLoopbaan"
+PERSOON_NEVENFUNCTIE_ENDPOINT = f"{TWEEDEKAMER_API_BASE}/PersoonNevenfunctie"
+PERSOON_ONDERWIJS_ENDPOINT = f"{TWEEDEKAMER_API_BASE}/PersoonOnderwijs"
 
-# Sample proposals
-PROPOSALS_DATA = [
-    {
-        "title": "Climate Adaptation Act",
-        "content": "A proposal to allocate 10 billion euros over the next 5 years for climate adaptation projects, focusing on flood protection, drought management, and sustainable agriculture. The act aims to prepare the Netherlands for the impacts of climate change by investing in infrastructure, research, and community resilience programs.",
-        "proposer_name": "Jesse Klaver",
-        "status": "draft"
-    },
-    {
-        "title": "Digital Privacy Protection Framework",
-        "content": "This proposal establishes a comprehensive framework for protecting citizens' digital privacy rights. It includes stricter regulations for data collection by both government and private entities, enhanced transparency requirements, stronger consent mechanisms, and higher penalties for data breaches. The framework also establishes an independent oversight body to monitor compliance and investigate complaints.",
-        "proposer_name": "Rob Jetten",
-        "status": "draft"
-    },
-    {
-        "title": "Immigration Reform Act",
-        "content": "A proposal to reform the immigration system with stricter entry requirements, more efficient processing of asylum applications, and enhanced border security measures. The act also includes provisions for integration programs for accepted refugees and a points-based system for economic migrants based on skills, education, and language proficiency.",
-        "proposer_name": "Geert Wilders",
-        "status": "draft"
+async def fetch_data(url, params=None):
+    """Fetch data from the Tweede Kamer API"""
+    if params is None:
+        params = {}
+    
+    # Add standard parameters for JSON output and expanded entities
+    params.update({
+        "$format": "json",
+        "$expand": "Fractie"  # Include related entities where appropriate
+    })
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, params=params, timeout=30.0)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            logger.error(f"Error fetching data from {url}: {e}")
+            return {"value": []}
+
+async def fetch_all_fracties():
+    """Fetch all political parties (fracties) from the API"""
+    logger.info("Fetching political parties...")
+    
+    params = {
+        "$filter": "Actief eq true",  # Only active parties
+        "$select": "Id,Afkorting,NaamNL,DatumActief,DatumInactief"
     }
-]
+    
+    response = await fetch_data(FRACTIES_ENDPOINT, params)
+    return response.get("value", [])
+
+async def fetch_all_personen():
+    """Fetch all parliament members from the API"""
+    logger.info("Fetching parliament members...")
+    
+    params = {
+        "$filter": "Actief eq true",  # Only active members
+        "$select": "Id,Roepnaam,Tussenvoegsel,Achternaam,Functie,FractieZetel/FractieId",
+        "$expand": "FractieZetel"
+    }
+    
+    response = await fetch_data(PERSONEN_ENDPOINT, params)
+    return response.get("value", [])
+
+async def fetch_person_details(person_id):
+    """Fetch additional details for a specific person"""
+    logger.info(f"Fetching details for person {person_id}...")
+    
+    # Fetch career information
+    career_params = {
+        "$filter": f"PersoonId eq {person_id}",
+        "$select": "Id,PersoonId,Functie,Werkgever,Van,TotEnMet,Omschrijving"
+    }
+    career_response = await fetch_data(PERSOON_LOOPBAAN_ENDPOINT, career_params)
+    
+    # Fetch additional positions/functions
+    nevenfunctie_params = {
+        "$filter": f"PersoonId eq {person_id}",
+        "$select": "Id,PersoonId,Functie,Werkgever,Van,TotEnMet,Omschrijving"
+    }
+    nevenfunctie_response = await fetch_data(PERSOON_NEVENFUNCTIE_ENDPOINT, nevenfunctie_params)
+    
+    # Fetch education information
+    education_params = {
+        "$filter": f"PersoonId eq {person_id}",
+        "$select": "Id,PersoonId,Opleiding,Instelling,Van,TotEnMet,Omschrijving"
+    }
+    education_response = await fetch_data(PERSOON_ONDERWIJS_ENDPOINT, education_params)
+    
+    return {
+        "career": career_response.get("value", []),
+        "career2": nevenfunctie_response.get("value", []),
+        "education": education_response.get("value", [])
+    }
+
+def format_career_text(career_items):
+    """Format career items into readable text"""
+    if not career_items:
+        return None
+    
+    formatted_items = []
+    for item in career_items:
+        period = ""
+        if item.get("Van"):
+            period += f"From {item.get('Van')}"
+        if item.get("TotEnMet"):
+            period += f" to {item.get('TotEnMet')}"
+        
+        role = item.get("Functie", "")
+        employer = item.get("Werkgever", "")
+        description = item.get("Omschrijving", "")
+        
+        entry = f"{role} at {employer}" if employer else role
+        if period:
+            entry += f" ({period})"
+        if description:
+            entry += f": {description}"
+            
+        formatted_items.append(entry)
+    
+    return "\n".join(formatted_items)
+
+def format_education_text(education_items):
+    """Format education items into readable text"""
+    if not education_items:
+        return None
+    
+    formatted_items = []
+    for item in education_items:
+        period = ""
+        if item.get("Van"):
+            period += f"From {item.get('Van')}"
+        if item.get("TotEnMet"):
+            period += f" to {item.get('TotEnMet')}"
+        
+        education = item.get("Opleiding", "")
+        institution = item.get("Instelling", "")
+        description = item.get("Omschrijving", "")
+        
+        entry = f"{education} at {institution}" if institution else education
+        if period:
+            entry += f" ({period})"
+        if description:
+            entry += f": {description}"
+            
+        formatted_items.append(entry)
+    
+    return "\n".join(formatted_items)
 
 async def init_db():
-    """Initialize the database with sample data."""
+    """Initialize the database with data from the Tweede Kamer API"""
     Base.metadata.create_all(bind=engine)
     
-    party_abbreviation_to_id = {}
-    member_name_to_id = {}
+    logger.info("Starting database initialization...")
+    
+    # Get data from API
+    fracties = await fetch_all_fracties()
+    personen = await fetch_all_personen()
+    
+    # Mapping of API IDs to database IDs
+    fractie_id_map = {}
     
     with Session(engine) as db:
-        # Add parties
-        for party_data in PARTIES_DATA:
-            db_party = Party(**party_data)
+        # Add parties (fracties)
+        logger.info(f"Adding {len(fracties)} political parties...")
+        for fractie in fracties:
+            db_party = Party(
+                name=fractie.get("NaamNL", ""),
+                abbreviation=fractie.get("Afkorting", ""),
+                ideology="",  # API doesn't provide ideology information
+                description=f"Active since {fractie.get('DatumActief', '')}"
+            )
             db.add(db_party)
             db.flush()
-            party_abbreviation_to_id[party_data["abbreviation"]] = db_party.id
+            fractie_id_map[fractie.get("Id")] = db_party.id
         
         db.commit()
         
-        # Add members
-        for member_data in MEMBERS_DATA:
-            party_abbreviation = member_data.pop("party_abbreviation")
-            party_id = party_abbreviation_to_id.get(party_abbreviation)
-            if not party_id:
-                print(f"Party with abbreviation {party_abbreviation} not found")
+        # Add members (personen)
+        logger.info(f"Adding {len(personen)} parliament members...")
+        for person in personen:
+            # Get person details
+            person_id = person.get("Id")
+            if not person_id:
                 continue
                 
+            # Get the fractie (party) ID
+            fractie_id = None
+            fractie_zetel = person.get("FractieZetel", [])
+            if isinstance(fractie_zetel, list) and fractie_zetel:
+                fractie_id = fractie_zetel[0].get("FractieId")
+            elif isinstance(fractie_zetel, dict):
+                fractie_id = fractie_zetel.get("FractieId")
+                
+            if not fractie_id or fractie_id not in fractie_id_map:
+                logger.warning(f"Skipping person {person_id}: No valid party ID")
+                continue
+                
+            party_id = fractie_id_map[fractie_id]
+            
+            # Get additional details
+            details = await fetch_person_details(person_id)
+            
+            # Format name
+            roepnaam = person.get("Roepnaam", "")
+            tussenvoegsel = person.get("Tussenvoegsel", "")
+            achternaam = person.get("Achternaam", "")
+            
+            full_name = roepnaam
+            if tussenvoegsel:
+                full_name += f" {tussenvoegsel}"
+            full_name += f" {achternaam}"
+            
+            # Format career, additional positions, and education information
+            career_text = format_career_text(details.get("career", []))
+            career2_text = format_career_text(details.get("career2", []))
+            education_text = format_education_text(details.get("education", []))
+            
             db_member = Member(
+                name=full_name.strip(),
                 party_id=party_id,
-                **{k: v for k, v in member_data.items()}
+                role=person.get("Functie", "MP"),
+                career=career_text,
+                career2=career2_text,
+                education=education_text
             )
             db.add(db_member)
-            db.flush()
-            member_name_to_id[member_data["name"]] = db_member.id
-        
-        db.commit()
-        
-        # Add proposals
-        for proposal_data in PROPOSALS_DATA:
-            proposer_name = proposal_data.pop("proposer_name")
-            status = proposal_data.pop("status")
-            proposer_id = member_name_to_id.get(proposer_name)
-            if not proposer_id:
-                print(f"Member with name {proposer_name} not found")
-                continue
-                
-            db_proposal = Proposal(
-                proposer_id=proposer_id,
-                status=status,
-                **proposal_data
-            )
-            db.add(db_proposal)
         
         db.commit()
     
-    print("Database initialized with sample data!")
+    logger.info("Database initialization completed successfully!")
 
 if __name__ == "__main__":
     asyncio.run(init_db())
