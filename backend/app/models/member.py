@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, ForeignKey
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -10,14 +10,12 @@ class Member(Base):
     name = Column(String, index=True)
     party_id = Column(Integer, ForeignKey("parties.id"))
     role = Column(String, index=True)
-    
-    # Political leanings on various dimensions (0-100 scale)
-    economic_leaning = Column(Float)  # Left (0) to Right (100)
-    social_leaning = Column(Float)    # Progressive (0) to Conservative (100)
-    eu_stance = Column(Float)         # Pro-EU (0) to Anti-EU (100)
-    
-    bio = Column(Text)
-    
+
+    # Career and education information from opendata.tweedekamer.nl
+    career = Column(Text)         # PersoonLoopbaan
+    career2 = Column(Text)        # PersoonNevenfunctie
+    education = Column(Text)      # PersoonEducation
+
     # Relationships
     party = relationship("Party", back_populates="members")
     votes = relationship("Vote", back_populates="member")

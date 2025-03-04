@@ -4,8 +4,6 @@ from typing import Optional, List
 class PartyBase(BaseModel):
     name: str
     abbreviation: str
-    ideology: str
-    description: Optional[str] = None
 
 class PartyCreate(PartyBase):
     pass

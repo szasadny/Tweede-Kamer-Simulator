@@ -9,8 +9,6 @@ class Party(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True)
     abbreviation = Column(String, unique=True, index=True)
-    ideology = Column(String, index=True)
-    description = Column(Text)
-    
+
     # Relationships
     members = relationship("Member", back_populates="party")

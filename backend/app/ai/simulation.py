@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 import asyncio
+from sqlalchemy.orm import Session
 from app.ai.agents import ParliamentaryAgent
 from app.models.vote import VoteType
 from app.models.proposal import ProposalStatus
@@ -8,7 +9,7 @@ class ParliamentSimulation:
     def __init__(self, agent: ParliamentaryAgent = None):
         self.agent = agent or ParliamentaryAgent()
     
-    async def simulate_debate(self, proposal_data: Dict[Any, Any], members: List[Dict[Any, Any]], 
+    async def simulate_debate(self, db: Session, proposal_data: Dict[Any, Any], members: List[Dict[Any, Any]], 
                              debate_id: int, db_crud):
         """
         Simulate a debate on a proposal among parliament members
@@ -21,7 +22,7 @@ class ParliamentSimulation:
         # Generate debate entries for each participating member
         for member in participating_members:
             try:
-                debate_content = await self.agent.generate_debate_entry(member, proposal_data)
+                debate_content = await self.agent.generate_debate_entry(db, member, proposal_data)
                 
                 # Create debate entry in the database
                 entry = {
@@ -41,7 +42,7 @@ class ParliamentSimulation:
         
         return debate_entries
     
-    async def simulate_voting(self, proposal_id: int, proposal_data: Dict[Any, Any], 
+    async def simulate_voting(self, db: Session, proposal_id: int, proposal_data: Dict[Any, Any], 
                              members: List[Dict[Any, Any]], debate_summary: str, db_crud):
         """
         Simulate voting on a proposal among parliament members
@@ -51,7 +52,7 @@ class ParliamentSimulation:
         # Generate votes for each member
         for member in members:
             try:
-                vote_type = await self.agent.generate_vote(member, proposal_data, debate_summary)
+                vote_type = await self.agent.generate_vote(db, member, proposal_data, debate_summary)
                 
                 # Create vote in the database
                 vote = {
@@ -88,7 +89,7 @@ class ParliamentSimulation:
         
         return votes
     
-    async def run_full_simulation(self, proposal_id: int, db_crud):
+    async def run_full_simulation(self, db: Session, proposal_id: int, db_crud):
         """
         Run a full simulation of the parliamentary process for a proposal
         """
@@ -110,16 +111,16 @@ class ParliamentSimulation:
         })
         
         # Simulate debate
-        debate_entries = await self.simulate_debate(proposal, members, debate.id, db_crud)
+        debate_entries = await self.simulate_debate(db, proposal, members, debate.id, db_crud)
         
         # Generate debate summary
-        debate_summary = await self.agent.generate_debate_summary(debate_entries)
+        debate_summary = await self.agent.generate_debate_summary(db, debate_entries)
         
         # Update proposal to voting status
         await db_crud.update_proposal_status(proposal_id, ProposalStatus.VOTING)
         
         # Simulate voting
-        votes = await self.simulate_voting(proposal_id, proposal, members, debate_summary, db_crud)
+        votes = await self.simulate_voting(db, proposal_id, proposal, members, debate_summary, db_crud)
         
         return {
             "proposal": proposal,

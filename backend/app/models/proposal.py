@@ -19,12 +19,8 @@ class Proposal(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
     content = Column(Text)
-    proposer_id = Column(Integer, ForeignKey("members.id"))
     status = Column(Enum(ProposalStatus), default=ProposalStatus.DRAFT)
-    submitted_date = Column(DateTime, default=datetime.utcnow)
-    vote_date = Column(DateTime, nullable=True)
     
     # Relationships
-    proposer = relationship("Member")
     debates = relationship("Debate", back_populates="proposal")
     votes = relationship("Vote", back_populates="proposal")
